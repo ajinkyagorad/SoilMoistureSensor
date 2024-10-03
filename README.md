@@ -4,6 +4,29 @@
 This project provides a **real-time web-based dashboard** to monitor the soil moisture of your plant using an ESP32-based microcontroller and a capacitive soil moisture sensor. The dashboard displays real-time moisture levels, hourly averages over the past 7 days, and dynamically updates the page's theme based on the current moisture readings.
 
 
+<p align="center">
+  
+  <!-- Image 1 -->
+  <img src="./imgs/plant.jpg" alt="Plant Setup" width="300px" height="auto" style="padding: 5px;"/>
+
+  <!-- Video as a link -->
+  <a href="./imgs/demo.mp4">
+    <img src="./imgs/demo-thumbnail.jpg" alt="Demo Video" width="300px" height="auto" style="padding: 5px;"/>
+  </a>
+
+</p>
+
+<p align="center">
+
+  <!-- Image 2 -->
+  <img src="./imgs/sensor.jpg" alt="Moisture Sensor" width="300px" height="auto" style="padding: 5px;"/>
+
+  <!-- Image 3 -->
+  <img src="./imgs/xiaoesp32s3.jpg" alt="XIAO ESP32S3" width="300px" height="auto" style="padding: 5px;"/>
+
+</p>
+
+
 # 🌿 Plant Moisture Sensor Dashboard
 
 This project provides a **real-time web-based dashboard** to monitor the soil moisture of your plant using an ESP32-based microcontroller and a capacitive soil moisture sensor.
