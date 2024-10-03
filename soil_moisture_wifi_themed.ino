@@ -11,21 +11,26 @@ WebServer server(80);
 // Sensor pin
 int sensorPin = A10;
 
-// Circular buffer for the last 30 seconds of data (10 samples per second, averaged per second)
+// Circular buffer for real-time data (30 seconds, 10 samples per second)
 const int bufferSize = 30;
-float secondAverages[bufferSize]; // Stores 30-second raw data
+float secondAverages[bufferSize];
 int bufferIndex = 0;
 
 // Variables for real-time sampling (10 samples per second)
 int sampleCounter = 0;
 float secondSum = 0;
 
-// Variables to store hourly averages for the past 7 days (168 hours)
-float hourlyAverages[24 * 7]; // 7 days * 24 hours = 168 hours
-int hourIndex = 0;
+// Variables to store hourly, daily, and weekly averages
+float dailyAverages[24];     // Daily history (24 hours)
+float weeklyAverages[7];     // Weekly history (7 days)
+int dailyIndex = 0;
+int weeklyIndex = 0;
+
 float hourSum = 0;
+float daySum = 0;
 int minuteCounter = 0;
-unsigned long startTime = millis(); // Track when the system started
+int dayCounter = 0;
+unsigned long startTime = millis(); // Track the system start time
 
 // Thresholds for determining moisture levels
 const int dryThreshold = 3100;
@@ -104,7 +109,7 @@ void serveHTML() {
   <body>
     <div class="container">
       <h1>Real-Time Moisture Sensor Dashboard</h1>
-      <p class="info">This dashboard provides real-time moisture readings of your plant pot. Below is a moisture indicator and the state of your plant.</p>
+      <p class="info">This dashboard provides real-time moisture readings of your plant. Below is a moisture indicator and the state of your plant.</p>
 
       <div class="moisture-status" id="moistureIcon">🌿 Moist</div>
 
@@ -120,15 +125,20 @@ void serveHTML() {
           <canvas id="realtimeChart"></canvas>
         </div>
         <div class="chart-box">
-          <h2>Weekly History (Hourly Averages)</h2>
-          <canvas id="historyChart"></canvas>
+          <h2>Daily History (Hourly Averages)</h2>
+          <canvas id="dailyChart"></canvas>
+        </div>
+        <div class="chart-box">
+          <h2>Weekly History (Daily Averages)</h2>
+          <canvas id="weeklyChart"></canvas>
         </div>
       </div>
     </div>
 
     <script>
       const realtimeCtx = document.getElementById('realtimeChart').getContext('2d');
-      const historyCtx = document.getElementById('historyChart').getContext('2d');
+      const dailyCtx = document.getElementById('dailyChart').getContext('2d');
+      const weeklyCtx = document.getElementById('weeklyChart').getContext('2d');
       const moistureBar = document.getElementById('moistureBar');
       const moistureIcon = document.getElementById('moistureIcon');
 
@@ -148,12 +158,7 @@ void serveHTML() {
         options: {
           responsive: true,
           scales: {
-            x: {
-              ticks: {
-                autoSkip: true,
-                maxTicksLimit: 10
-              }
-            },
+            x: { ticks: { autoSkip: true, maxTicksLimit: 10 } },
             y: {
               beginAtZero: true,
               min: 2000,
@@ -162,60 +167,50 @@ void serveHTML() {
               maxTicksLimit: 5
             }
           },
-          animation: {
-            duration: 0
-          },
-          plugins: {
-            legend: {
-              display: true,
-              position: 'top'
-            }
-          }
+          animation: { duration: 0 },
+          plugins: { legend: { display: true, position: 'top' } }
         }
       });
 
-      const historyChart = new Chart(historyCtx, {
+      const dailyChart = new Chart(dailyCtx, {
         type: 'line',
         data: {
-          labels: Array.from({ length: 168 }, (_, i) => {
-            // Dynamically calculate the time labels, e.g., 1 hour ago, 2 hours ago, etc.
-            return `${168 - i}h ago`;
-          }),
+          labels: Array.from({ length: 24 }, (_, i) => `${24 - i}h ago`),
           datasets: [{
             label: 'Moisture (Hourly Avg)',
             borderColor: 'rgb(192, 75, 75)',
             backgroundColor: 'rgba(192, 75, 75, 0.2)',
-            data: Array(168).fill(0),  // Dynamically update this with actual data
+            data: Array(24).fill(0),
             fill: true,
             tension: 0.4
           }]
         },
         options: {
           responsive: true,
-          scales: {
-            x: {
-              ticks: {
-                autoSkip: true,
-                maxTicksLimit: 12 // Adjust for better readability
-              }
-            },
-            y: {
-              beginAtZero: true,
-              min: 2000,
-              max: 3200,
-              stepSize: 200,
-              maxTicksLimit: 5
-            }
-          },
-          animation: {
-            duration: 0
-          },
-          plugins: {
-            legend: {
-              display: true,
-              position: 'top'
-            }
-          }
+          scales: { x: { maxTicksLimit: 6 }, y: { beginAtZero: true, min: 2000, max: 3200, stepSize: 200 } },
+          animation: { duration: 0 },
+          plugins: { legend: { display: true, position: 'top' } }
+        }
+      });
+
+      const weeklyChart = new Chart(weeklyCtx, {
+        type: 'line',
+        data: {
+          labels: Array.from({ length: 7 }, (_, i) => `${7 - i} days ago`),
+          datasets: [{
+            label: 'Moisture (Daily Avg)',
+            borderColor: 'rgb(75, 192, 192)',
+            backgroundColor: 'rgba(75, 192, 192, 0.2)',
+            data: Array(7).fill(0),
+            fill: true,
+            tension: 0.4
+          }]
+        },
+        options: {
+          responsive: true,
+          scales: { x: { maxTicksLimit: 7 }, y: { beginAtZero: true, min: 2000, max: 3200, stepSize: 200 } },
+          animation: { duration: 0 },
+          plugins: { legend: { display: true, position: 'top' } }
         }
       });
 
@@ -223,20 +218,19 @@ void serveHTML() {
         fetch('/data')
           .then(response => response.json())
           .then(data => {
-            // Shift left and add new data to the real-time chart
+            // Update real-time chart
             realtimeChart.data.datasets[0].data.shift();
             realtimeChart.data.datasets[0].data.push(data.realtimeValues[data.realtimeValues.length - 1]);
 
-            // Update the history chart data and labels
-            historyChart.data.datasets[0].data = data.historyValues;
-            updateHistoryLabels();
-            
+            // Update daily and weekly charts
+            dailyChart.data.datasets[0].data = data.dailyValues;
+            weeklyChart.data.datasets[0].data = data.weeklyValues;
+
             // Update moisture status bar and icon
             const latestValue = data.realtimeValues[data.realtimeValues.length - 1];
             const moisturePercent = mapRange(latestValue, 2200, 3100, 100, 0); // Wet = 100%, Dry = 0%
 
             moistureBar.style.width = `${moisturePercent}%`;
-
             if (latestValue <= 2200) {
               document.body.style.backgroundColor = '#4CAF50';  // Green (Moist)
               moistureBar.style.backgroundColor = '#4CAF50';
@@ -256,21 +250,14 @@ void serveHTML() {
             }
 
             realtimeChart.update();
-            historyChart.update();
+            dailyChart.update();
+            weeklyChart.update();
           });
       }
 
       // Map the sensor value to a percentage for the moisture bar
       function mapRange(value, in_min, in_max, out_min, out_max) {
         return (value - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
-      }
-
-      // Function to update history chart labels
-      function updateHistoryLabels() {
-        const elapsedHours = Math.floor((Date.now() - startTime) / (1000 * 60 * 60)); // Hours since start
-        historyChart.data.labels = Array.from({ length: 168 }, (_, i) => {
-          return `${elapsedHours - (168 - i)}h ago`;
-        });
       }
 
       // Update the charts every 100ms
@@ -285,53 +272,61 @@ void serveHTML() {
 
 // Endpoint to serve real-time sensor data as JSON
 void serveData() {
-  String json = "{\"realtimeValues\":[";
+  String json = "{\"realtimeValues\":["; 
   for (int i = 0; i < bufferSize; i++) {
     json += String(secondAverages[(bufferIndex + i) % bufferSize]);
     if (i < bufferSize - 1) json += ",";
   }
-  json += "],\"historyValues\":[";
-  for (int i = 0; i < 24 * 7; i++) {
-    json += String(hourlyAverages[(hourIndex + i) % (24 * 7)]);
-    if (i < (24 * 7) - 1) json += ",";
+  json += "],\"dailyValues\":[";
+  for (int i = 0; i < 24; i++) {
+    json += String(dailyAverages[i]);
+    if (i < 23) json += ",";
+  }
+  json += "],\"weeklyValues\":[";
+  for (int i = 0; i < 7; i++) {
+    json += String(weeklyAverages[i]);
+    if (i < 6) json += ",";
   }
   json += "]}";
   server.send(200, "application/json", json);
 }
 
-// Collects sensor data and updates second-level averages
+// Update real-time and history data
 void updateSensorData() {
-    int sensorValue = analogRead(sensorPin); // Read the raw sensor value
+  int sensorValue = analogRead(sensorPin); // Read sensor value
 
-    // Store each raw sensor value directly into the buffer for real-time plotting
-    secondAverages[bufferIndex] = sensorValue;
-    bufferIndex = (bufferIndex + 1) % bufferSize;  // Circular buffer
+  // Store real-time data
+  secondAverages[bufferIndex] = sensorValue;
+  bufferIndex = (bufferIndex + 1) % bufferSize;
 
-    // Accumulate the sensor values for hourly averaging (only for storage, not real-time plotting)
-    secondSum += sensorValue;
-    sampleCounter++;
+  // Accumulate hourly averages
+  secondSum += sensorValue;
+  sampleCounter++;
 
-    // Every 10 samples (1 second), calculate average (for hourly storage)
-    if (sampleCounter == 10) {
-        float secondAverage = secondSum / sampleCounter; // Average for storage (1 second average)
+  if (sampleCounter == 10) {
+    hourSum += secondSum / sampleCounter;
+    minuteCounter++;
+    secondSum = 0;
+    sampleCounter = 0;
+  }
 
-        // Add to the hourly average calculation
-        hourSum += secondAverage;
-        minuteCounter++;
+  if (minuteCounter == 60) { // Every hour
+    dailyAverages[dailyIndex] = hourSum / 60; // Store daily hourly averages
+    hourSum = 0;
+    dailyIndex = (dailyIndex + 1) % 24;
+    minuteCounter = 0;
 
-        // If 60 seconds have passed, calculate the hourly average for later storage
-        if (minuteCounter == 60) {
-            float hourlyAverage = hourSum / 60;  // Hourly average
-            hourlyAverages[hourIndex] = hourlyAverage;  // Store in hourly averages for history
-            hourIndex = (hourIndex + 1) % (24 * 7);  // Circular buffer for 7 days of hourly data
-            hourSum = 0;  // Reset for the next hour
-            minuteCounter = 0;
-        }
+    // Accumulate weekly averages
+    daySum += dailyAverages[dailyIndex];
+    dayCounter++;
+  }
 
-        // Reset second sum and sample counter for the next second
-        secondSum = 0;
-        sampleCounter = 0;
-    }
+  if (dayCounter == 24) { // Every day
+    weeklyAverages[weeklyIndex] = daySum / 24; // Store weekly daily averages
+    weeklyIndex = (weeklyIndex + 1) % 7;
+    daySum = 0;
+    dayCounter = 0;
+  }
 }
 
 void setup() {
@@ -348,16 +343,17 @@ void setup() {
 
   // Initialize the data buffers
   for (int i = 0; i < bufferSize; i++) secondAverages[i] = 0;
-  for (int i = 0; i < (24 * 7); i++) hourlyAverages[i] = 0;
+  for (int i = 0; i < 24; i++) dailyAverages[i] = 0;
+  for (int i = 0; i < 7; i++) weeklyAverages[i] = 0;
 
   // Start the server
   server.on("/", serveHTML);        // Serve the HTML page
-  server.on("/data", serveData);    // Serve the real-time sensor data
+  server.on("/data", serveData);    // Serve the sensor data
   server.begin();
 }
 
 void loop() {
   server.handleClient();
-  updateSensorData(); // Collect 10 samples every second
-  delay(100);         // Delay of 100ms to take 10 samples per second
+  updateSensorData(); // Update sensor data every 100ms
+  delay(100);         // Delay of 100ms to collect 10 samples per second
 }
