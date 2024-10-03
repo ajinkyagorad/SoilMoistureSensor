@@ -7,12 +7,11 @@ This project provides a **real-time web-based dashboard** to monitor the soil mo
 # 🌿 Plant Moisture Sensor Dashboard
 
 This project provides a **real-time web-based dashboard** to monitor the soil moisture of your plant using an ESP32-based microcontroller and a capacitive soil moisture sensor.
-
 <div style="display: flex; flex-wrap: wrap; justify-content: space-around;">
 
   <!-- Video -->
   <div style="flex-basis: 45%; margin: 10px;">
-    <video controls width="100%" style="max-width: 400px;">
+    <video controls width="100%" style="max-width: 300px;">
       <source src="./imgs/demo.mp4" type="video/mp4">
       Your browser does not support the video tag.
     </video>
@@ -20,17 +19,17 @@ This project provides a **real-time web-based dashboard** to monitor the soil mo
 
   <!-- Image 1 -->
   <div style="flex-basis: 45%; margin: 10px;">
-    <img src="./imgs/plant.jpg" alt="Plant Setup" style="width: 100%; max-width: 400px;"/>
+    <img src="./imgs/plant.jpg" alt="Plant Setup" style="width: 100%; max-width: 300px;"/>
   </div>
 
   <!-- Image 2 -->
   <div style="flex-basis: 45%; margin: 10px;">
-    <img src="./imgs/sensor.jpg" alt="Moisture Sensor" style="width: 100%; max-width: 400px;"/>
+    <img src="./imgs/sensor.jpg" alt="Moisture Sensor" style="width: 100%; max-width: 300px;"/>
   </div>
 
   <!-- Image 3 -->
   <div style="flex-basis: 45%; margin: 10px;">
-    <img src="./imgs/xiaoesp32s2.jpg" alt="XIAO ESP32S3" style="width: 100%; max-width: 400px;"/>
+    <img src="./imgs/xiaoesp32s2.jpg" alt="XIAO ESP32S2" style="width: 100%; max-width: 300px;"/>
   </div>
 
 </div>
