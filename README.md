@@ -44,10 +44,8 @@ This project provides a **real-time web-based dashboard** to monitor the soil mo
 ## Project Structure
 
 ```
-├── src
-│   └── moisture_sensor_dashboard.ino   # Main Arduino/ESP32 sketch
-├── README.md                           # Project documentation
-└── LICENSE                             # Project license (MIT)
+├ moisture_sensor_dashboard.ino   # Main Arduino/ESP32 sketch
+└── README.md                           # Project documentation
 ```
 
 ## Installation Instructions
