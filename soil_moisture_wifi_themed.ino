@@ -2,8 +2,8 @@
 #include <WebServer.h>
 
 // Wi-Fi credentials
-const char* ssid = "****";
-const char* password = "****";
+const char* ssid = "";
+const char* password = "";
 
 // Server running on port 80
 WebServer server(80);
@@ -11,26 +11,24 @@ WebServer server(80);
 // Sensor pin
 int sensorPin = A10;
 
-// Circular buffer for real-time data (30 seconds, 10 samples per second)
+// Circular buffer for the last 30 seconds of data (10 samples per second, averaged per second)
 const int bufferSize = 30;
-float secondAverages[bufferSize];
+float secondAverages[bufferSize]; // Stores 30-second raw data
 int bufferIndex = 0;
 
 // Variables for real-time sampling (10 samples per second)
 int sampleCounter = 0;
 float secondSum = 0;
 
-// Variables to store hourly, daily, and weekly averages
-float dailyAverages[24];     // Daily history (24 hours)
-float weeklyAverages[7];     // Weekly history (7 days)
-int dailyIndex = 0;
+// Variables to store hourly averages for the past 24 hours and daily averages for the past 7 days
+float hourlyAverages[24]; // 24 hours for daily history
+float weeklyAverages[7];  // 7 days for weekly history
+int hourlyIndex = 0;
 int weeklyIndex = 0;
-
 float hourSum = 0;
 float daySum = 0;
 int minuteCounter = 0;
 int dayCounter = 0;
-unsigned long startTime = millis(); // Track the system start time
 
 // Thresholds for determining moisture levels
 const int dryThreshold = 3100;
@@ -97,7 +95,7 @@ void serveHTML() {
       }
       .moisture-bar-inner {
         height: 100%;
-        transition: width 0.5s ease;
+        transition: width 0.5s ease, background-color 0.5s ease;
       }
       .info {
         text-align: center;
@@ -223,29 +221,24 @@ void serveHTML() {
             realtimeChart.data.datasets[0].data.push(data.realtimeValues[data.realtimeValues.length - 1]);
 
             // Update daily and weekly charts
-            dailyChart.data.datasets[0].data = data.dailyValues;
-            weeklyChart.data.datasets[0].data = data.weeklyValues;
+            dailyChart.data.datasets[0].data = data.hourlyValues;
+            weeklyChart.data.datasets[0].data = data.dailyValues;
 
             // Update moisture status bar and icon
             const latestValue = data.realtimeValues[data.realtimeValues.length - 1];
             const moisturePercent = mapRange(latestValue, 2200, 3100, 100, 0); // Wet = 100%, Dry = 0%
-
+            const moistureColor = getMoistureColor(latestValue);
             moistureBar.style.width = `${moisturePercent}%`;
+            moistureBar.style.backgroundColor = moistureColor;
+            document.body.style.backgroundColor = moistureColor;  // Update page background theme
+
             if (latestValue <= 2200) {
-              document.body.style.backgroundColor = '#4CAF50';  // Green (Moist)
-              moistureBar.style.backgroundColor = '#4CAF50';
               moistureIcon.textContent = "🌿 Moist";
             } else if (latestValue > 2200 && latestValue <= 2600) {
-              document.body.style.backgroundColor = '#FFEB3B';  // Yellow (Moist)
-              moistureBar.style.backgroundColor = '#FFEB3B';
               moistureIcon.textContent = "🌱 Moist";
             } else if (latestValue > 2600 && latestValue <= 3100) {
-              document.body.style.backgroundColor = '#FFC107';  // Yellow (Drying)
-              moistureBar.style.backgroundColor = '#FFC107';
               moistureIcon.textContent = "🌵 Dry";
             } else {
-              document.body.style.backgroundColor = '#FF5722';  // Red (Dry)
-              moistureBar.style.backgroundColor = '#FF5722';
               moistureIcon.textContent = "🔥 Very Dry";
             }
 
@@ -253,6 +246,32 @@ void serveHTML() {
             dailyChart.update();
             weeklyChart.update();
           });
+      }
+
+      // Function to map moisture value to a smooth color gradient between green, yellow, and red
+      function getMoistureColor(value) {
+        const green = [76, 175, 80];   // RGB for green
+        const yellow = [255, 235, 59]; // RGB for yellow
+        const red = [255, 87, 34];     // RGB for red
+
+        let resultColor;
+        if (value <= 2200) {
+          resultColor = `rgb(${green[0]}, ${green[1]}, ${green[2]})`;
+        } else if (value > 2200 && value <= 2600) {
+          resultColor = interpolateColor(green, yellow, (value - 2200) / 400);
+        } else if (value > 2600 && value <= 3100) {
+          resultColor = interpolateColor(yellow, red, (value - 2600) / 500);
+        } else {
+          resultColor = `rgb(${red[0]}, ${red[1]}, ${red[2]})`;
+        }
+        return resultColor;
+      }
+
+      // Function to interpolate between two colors
+      function interpolateColor(color1, color2, factor) {
+        return `rgb(${Math.round(color1[0] + (color2[0] - color1[0]) * factor)}, 
+                    ${Math.round(color1[1] + (color2[1] - color1[1]) * factor)}, 
+                    ${Math.round(color1[2] + (color2[2] - color1[2]) * factor)})`;
       }
 
       // Map the sensor value to a percentage for the moisture bar
@@ -277,12 +296,12 @@ void serveData() {
     json += String(secondAverages[(bufferIndex + i) % bufferSize]);
     if (i < bufferSize - 1) json += ",";
   }
-  json += "],\"dailyValues\":[";
+  json += "],\"hourlyValues\":[";
   for (int i = 0; i < 24; i++) {
-    json += String(dailyAverages[i]);
+    json += String(hourlyAverages[i]);
     if (i < 23) json += ",";
   }
-  json += "],\"weeklyValues\":[";
+  json += "],\"dailyValues\":[";
   for (int i = 0; i < 7; i++) {
     json += String(weeklyAverages[i]);
     if (i < 6) json += ",";
@@ -291,9 +310,9 @@ void serveData() {
   server.send(200, "application/json", json);
 }
 
-// Update real-time and history data
+// Collect sensor data and update averages
 void updateSensorData() {
-  int sensorValue = analogRead(sensorPin); // Read sensor value
+  int sensorValue = analogRead(sensorPin); // Read the sensor value
 
   // Store real-time data
   secondAverages[bufferIndex] = sensorValue;
@@ -303,7 +322,7 @@ void updateSensorData() {
   secondSum += sensorValue;
   sampleCounter++;
 
-  if (sampleCounter == 10) {
+  if (sampleCounter == 10) { // Every second
     hourSum += secondSum / sampleCounter;
     minuteCounter++;
     secondSum = 0;
@@ -311,18 +330,18 @@ void updateSensorData() {
   }
 
   if (minuteCounter == 60) { // Every hour
-    dailyAverages[dailyIndex] = hourSum / 60; // Store daily hourly averages
+    hourlyAverages[hourlyIndex] = hourSum / 60;  // Store hourly averages
     hourSum = 0;
-    dailyIndex = (dailyIndex + 1) % 24;
     minuteCounter = 0;
+    hourlyIndex = (hourlyIndex + 1) % 24;
 
-    // Accumulate weekly averages
-    daySum += dailyAverages[dailyIndex];
+    // Accumulate daily averages
+    daySum += hourlyAverages[hourlyIndex];
     dayCounter++;
   }
 
   if (dayCounter == 24) { // Every day
-    weeklyAverages[weeklyIndex] = daySum / 24; // Store weekly daily averages
+    weeklyAverages[weeklyIndex] = daySum / 24;  // Store daily averages
     weeklyIndex = (weeklyIndex + 1) % 7;
     daySum = 0;
     dayCounter = 0;
@@ -343,17 +362,17 @@ void setup() {
 
   // Initialize the data buffers
   for (int i = 0; i < bufferSize; i++) secondAverages[i] = 0;
-  for (int i = 0; i < 24; i++) dailyAverages[i] = 0;
+  for (int i = 0; i < 24; i++) hourlyAverages[i] = 0;
   for (int i = 0; i < 7; i++) weeklyAverages[i] = 0;
 
   // Start the server
   server.on("/", serveHTML);        // Serve the HTML page
-  server.on("/data", serveData);    // Serve the sensor data
+  server.on("/data", serveData);    // Serve sensor data
   server.begin();
 }
 
 void loop() {
   server.handleClient();
-  updateSensorData(); // Update sensor data every 100ms
-  delay(100);         // Delay of 100ms to collect 10 samples per second
+  updateSensorData();
+  delay(100);  // Update sensor data every 100ms
 }
