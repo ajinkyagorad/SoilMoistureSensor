@@ -11,12 +11,12 @@ WebServer server(80);
 // Sensor pin
 int sensorPin = A10;
 
-// Circular buffer for the last 30 seconds of data (each second averaged from 10 samples)
-const int bufferSize = 30; // 30 samples for 30 seconds (averaged every second)
-float secondAverages[bufferSize]; // Stores 30-second averages
+// Circular buffer for the last 30 seconds of data (10 samples per second, averaged per second)
+const int bufferSize = 30;
+float secondAverages[bufferSize]; // Stores 30-second raw data
 int bufferIndex = 0;
 
-// Variables to store real-time sampling (10 samples per second)
+// Variables for real-time sampling (10 samples per second)
 int sampleCounter = 0;
 float secondSum = 0;
 
@@ -156,7 +156,9 @@ void serveHTML() {
             },
             y: {
               beginAtZero: true,
-              stepSize: 50,
+              min: 2000,
+              max: 3200,
+              stepSize: 200,
               maxTicksLimit: 5
             }
           },
@@ -191,12 +193,14 @@ void serveHTML() {
             x: {
               ticks: {
                 autoSkip: true,
-                maxTicksLimit: 10
+                maxTicksLimit: 12
               }
             },
             y: {
               beginAtZero: true,
-              stepSize: 100,
+              min: 2000,
+              max: 3200,
+              stepSize: 200,
               maxTicksLimit: 5
             }
           },
