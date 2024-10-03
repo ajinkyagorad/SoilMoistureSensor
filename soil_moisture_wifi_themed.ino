@@ -25,6 +25,7 @@ float hourlyAverages[24 * 7]; // 7 days * 24 hours = 168 hours
 int hourIndex = 0;
 float hourSum = 0;
 int minuteCounter = 0;
+unsigned long startTime = millis(); // Track when the system started
 
 // Thresholds for determining moisture levels
 const int dryThreshold = 3100;
@@ -33,7 +34,6 @@ const int wetThreshold = 2200;
 // Helper function to serve the HTML page
 void serveHTML() {
   String html = R"=====(
-
   <!DOCTYPE html>
   <html lang="en">
   <head>
@@ -177,12 +177,15 @@ void serveHTML() {
       const historyChart = new Chart(historyCtx, {
         type: 'line',
         data: {
-          labels: Array.from({ length: 168 }, (_, i) => `${168 - i}h ago`),
+          labels: Array.from({ length: 168 }, (_, i) => {
+            // Dynamically calculate the time labels, e.g., 1 hour ago, 2 hours ago, etc.
+            return `${168 - i}h ago`;
+          }),
           datasets: [{
             label: 'Moisture (Hourly Avg)',
             borderColor: 'rgb(192, 75, 75)',
             backgroundColor: 'rgba(192, 75, 75, 0.2)',
-            data: Array(168).fill(0),
+            data: Array(168).fill(0),  // Dynamically update this with actual data
             fill: true,
             tension: 0.4
           }]
@@ -193,7 +196,7 @@ void serveHTML() {
             x: {
               ticks: {
                 autoSkip: true,
-                maxTicksLimit: 12
+                maxTicksLimit: 12 // Adjust for better readability
               }
             },
             y: {
@@ -224,9 +227,10 @@ void serveHTML() {
             realtimeChart.data.datasets[0].data.shift();
             realtimeChart.data.datasets[0].data.push(data.realtimeValues[data.realtimeValues.length - 1]);
 
-            // Update the history chart
+            // Update the history chart data and labels
             historyChart.data.datasets[0].data = data.historyValues;
-
+            updateHistoryLabels();
+            
             // Update moisture status bar and icon
             const latestValue = data.realtimeValues[data.realtimeValues.length - 1];
             const moisturePercent = mapRange(latestValue, 2200, 3100, 100, 0); // Wet = 100%, Dry = 0%
@@ -261,12 +265,20 @@ void serveHTML() {
         return (value - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
       }
 
+      // Function to update history chart labels
+      function updateHistoryLabels() {
+        const elapsedHours = Math.floor((Date.now() - startTime) / (1000 * 60 * 60)); // Hours since start
+        historyChart.data.labels = Array.from({ length: 168 }, (_, i) => {
+          return `${elapsedHours - (168 - i)}h ago`;
+        });
+      }
+
       // Update the charts every 100ms
       setInterval(updateCharts, 100);
     </script>
   </body>
   </html>
-)=====";
+  )=====";
 
   server.send(200, "text/html", html);
 }
@@ -289,37 +301,37 @@ void serveData() {
 
 // Collects sensor data and updates second-level averages
 void updateSensorData() {
-  int sensorValue = analogRead(sensorPin); // Read the raw sensor value
+    int sensorValue = analogRead(sensorPin); // Read the raw sensor value
 
-  // Store each raw sensor value directly into the buffer for real-time plotting
-  secondAverages[bufferIndex] = sensorValue;
-  bufferIndex = (bufferIndex + 1) % bufferSize;  // Circular buffer
+    // Store each raw sensor value directly into the buffer for real-time plotting
+    secondAverages[bufferIndex] = sensorValue;
+    bufferIndex = (bufferIndex + 1) % bufferSize;  // Circular buffer
 
-  // Accumulate the sensor values for hourly averaging (only for storage, not real-time plotting)
-  secondSum += sensorValue;
-  sampleCounter++;
+    // Accumulate the sensor values for hourly averaging (only for storage, not real-time plotting)
+    secondSum += sensorValue;
+    sampleCounter++;
 
-  // Every 10 samples (1 second), calculate average (for hourly storage)
-  if (sampleCounter == 10) {
-    float secondAverage = secondSum / sampleCounter; // Average for storage (1 second average)
+    // Every 10 samples (1 second), calculate average (for hourly storage)
+    if (sampleCounter == 10) {
+        float secondAverage = secondSum / sampleCounter; // Average for storage (1 second average)
 
-    // Add to the hourly average calculation
-    hourSum += secondAverage;
-    minuteCounter++;
+        // Add to the hourly average calculation
+        hourSum += secondAverage;
+        minuteCounter++;
 
-    // If 60 seconds have passed, calculate the hourly average for later storage
-    if (minuteCounter == 60) {
-      float hourlyAverage = hourSum / 60;  // Hourly average
-      hourlyAverages[hourIndex] = hourlyAverage;  // Store in hourly averages for history
-      hourIndex = (hourIndex + 1) % (24 * 7);  // Circular buffer for 7 days of hourly data
-      hourSum = 0;  // Reset for the next hour
-      minuteCounter = 0;
+        // If 60 seconds have passed, calculate the hourly average for later storage
+        if (minuteCounter == 60) {
+            float hourlyAverage = hourSum / 60;  // Hourly average
+            hourlyAverages[hourIndex] = hourlyAverage;  // Store in hourly averages for history
+            hourIndex = (hourIndex + 1) % (24 * 7);  // Circular buffer for 7 days of hourly data
+            hourSum = 0;  // Reset for the next hour
+            minuteCounter = 0;
+        }
+
+        // Reset second sum and sample counter for the next second
+        secondSum = 0;
+        sampleCounter = 0;
     }
-
-    // Reset second sum and sample counter for the next second
-    secondSum = 0;
-    sampleCounter = 0;
-  }
 }
 
 void setup() {
