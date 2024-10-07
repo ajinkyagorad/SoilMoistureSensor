@@ -11,6 +11,7 @@ This project provides a **real-time web-based dashboard** to monitor the soil mo
 <p align="center">
   <img src="./imgs/webpage.png" alt="Webpage" width="800px"/>
 </p>
+
 ## Features
 
 - **Real-time Moisture Level Monitoring**: The dashboard shows the latest moisture reading, updated every 100ms.
