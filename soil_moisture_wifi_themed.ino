@@ -1,5 +1,6 @@
 #include <WiFi.h>
 #include <WebServer.h>
+#include <Preferences.h>
 
 // Wi-Fi credentials
 const char* ssid = "";
@@ -7,6 +8,7 @@ const char* password = "";
 
 // Server running on port 80
 WebServer server(80);
+Preferences preferences;
 
 // Sensor pin
 int sensorPin = A10;
@@ -30,9 +32,9 @@ float daySum = 0;
 int minuteCounter = 0;
 int dayCounter = 0;
 
-// Thresholds for determining moisture levels
-const int dryThreshold = 3100;
-const int wetThreshold = 2200;
+// Thresholds for determining moisture levels (stored in preferences)
+int dryThreshold;
+int wetThreshold;
 
 // Helper function to serve the HTML page
 void serveHTML() {
@@ -102,12 +104,60 @@ void serveHTML() {
         margin-top: 40px;
         font-size: 18px;
       }
+
+      /* Sidebar CSS */
+      #sidebar {
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        width: 300px;
+        height: 300px;
+        background-color: #111;
+        color: white;
+        border-radius: 10px;
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        transition: 0.5s;
+        padding: 20px;
+        display: none;
+      }
+
+      #openbtn {
+        font-size: 20px;
+        cursor: pointer;
+        background-color: #111;
+        color: white;
+        padding: 10px 15px;
+        border: none;
+        border-radius: 5px;
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        z-index: 10;
+      }
+
+      #openbtn:hover {
+        background-color: #444;
+      }
+
     </style>
   </head>
   <body>
     <div class="container">
       <h1>Real-Time Moisture Sensor Dashboard</h1>
-      <p class="info">This dashboard provides real-time moisture readings of your plant. Below is a moisture indicator and the state of your plant.</p>
+      <p class="info">This dashboard provides real-time moisture readings of your plant.</p>
+
+      <button id="openbtn" onclick="toggleSidebar()">☰ Settings</button>
+
+      <!-- Sidebar -->
+      <div id="sidebar">
+        <h2>Settings</h2>
+        <p>Set moisture thresholds:</p>
+        <label for="dryThreshold">Dry Threshold:</label>
+        <input type="number" id="dryThreshold" value="3100"><br><br>
+        <label for="wetThreshold">Wet Threshold:</label>
+        <input type="number" id="wetThreshold" value="2200"><br><br>
+        <button onclick="saveSettings()">Save</button>
+      </div>
 
       <div class="moisture-status" id="moistureIcon">🌿 Moist</div>
 
@@ -139,36 +189,59 @@ void serveHTML() {
       const weeklyCtx = document.getElementById('weeklyChart').getContext('2d');
       const moistureBar = document.getElementById('moistureBar');
       const moistureIcon = document.getElementById('moistureIcon');
+      let dryThreshold = 3100;
+      let wetThreshold = 2200;
+
+      // Toggle Sidebar
+      function toggleSidebar() {
+        const sidebar = document.getElementById("sidebar");
+        sidebar.style.display = sidebar.style.display === "none" ? "block" : "none";
+      }
+
+      // Save settings without adjusting axis limits manually
+      function saveSettings() {
+        dryThreshold = document.getElementById("dryThreshold").value;
+        wetThreshold = document.getElementById("wetThreshold").value;
+        fetch('/save-settings?dryThreshold=' + dryThreshold + '&wetThreshold=' + wetThreshold)
+          .then(response => response.json())
+          .then(data => {
+            alert("Settings saved!");
+            // No need to call updateChartYLimits here
+          });
+      }
+
 
       const realtimeChart = new Chart(realtimeCtx, {
-        type: 'line',
-        data: {
-          labels: Array.from({ length: 30 }, (_, i) => `${30 - i}s ago`),
-          datasets: [{
-            label: 'Moisture (Last 30 Seconds)',
-            borderColor: 'rgb(75, 192, 192)',
-            backgroundColor: 'rgba(75, 192, 192, 0.2)',
-            data: Array(30).fill(0),
-            fill: true,
-            tension: 0.4
-          }]
-        },
-        options: {
-          responsive: true,
-          scales: {
-            x: { ticks: { autoSkip: true, maxTicksLimit: 10 } },
-            y: {
-              beginAtZero: true,
-              min: 2000,
-              max: 3200,
-              stepSize: 200,
-              maxTicksLimit: 5
+      type: 'line',
+      data: {
+        labels: Array.from({ length: 30 }, (_, i) => `${30 - i}s ago`),
+        datasets: [{
+          label: 'Moisture (Last 30 Seconds)',
+          borderColor: 'rgb(75, 192, 192)',
+          backgroundColor: 'rgba(75, 192, 192, 0.2)',
+          data: Array(30).fill(0),
+          fill: true,
+          tension: 0.4
+        }]
+      },
+      options: {
+        responsive: true,
+        scales: {
+          x: { ticks: { autoSkip: true, maxTicksLimit: 10 } },
+          y: {
+            beginAtZero: false, // Let the chart dynamically adjust the Y-axis
+            suggestedMin: 1300, // Initial suggestion based on expected range
+            suggestedMax: 3500, // Initial suggestion based on expected range
+            ticks: {
+              autoSkip: true // Ensure that the chart properly skips unnecessary ticks
             }
-          },
-          animation: { duration: 0 },
-          plugins: { legend: { display: true, position: 'top' } }
-        }
-      });
+          }
+        },
+        animation: { duration: 0 },
+        plugins: { legend: { display: true, position: 'top' } }
+      }
+    });
+
 
       const dailyChart = new Chart(dailyCtx, {
         type: 'line',
@@ -185,7 +258,15 @@ void serveHTML() {
         },
         options: {
           responsive: true,
-          scales: { x: { maxTicksLimit: 6 }, y: { beginAtZero: true, min: 2000, max: 3200, stepSize: 200 } },
+          scales: { 
+            x: { maxTicksLimit: 6 },
+            y: {
+              beginAtZero: true,
+              min: 2000, // Default Y-axis minimum
+              max: 3200, // Default Y-axis maximum
+              stepSize: 200
+            }
+          },
           animation: { duration: 0 },
           plugins: { legend: { display: true, position: 'top' } }
         }
@@ -206,47 +287,77 @@ void serveHTML() {
         },
         options: {
           responsive: true,
-          scales: { x: { maxTicksLimit: 7 }, y: { beginAtZero: true, min: 2000, max: 3200, stepSize: 200 } },
+          scales: {
+            x: { maxTicksLimit: 7 },
+            y: {
+              beginAtZero: true,
+              min: 2000, // Default Y-axis minimum
+              max: 3200, // Default Y-axis maximum
+              stepSize: 200
+            }
+          },
           animation: { duration: 0 },
           plugins: { legend: { display: true, position: 'top' } }
         }
       });
 
+      // Function to update the Y-axis limits dynamically based on thresholds
+      function updateChartYLimits() {
+        const minY = Math.min(wetThreshold - 200, 2000);
+        const maxY = Math.max(dryThreshold + 200, 3200);
+
+        // Update Y-axis limits for all charts
+        realtimeChart.options.scales.y.min = minY;
+        realtimeChart.options.scales.y.max = maxY;
+        dailyChart.options.scales.y.min = minY;
+        dailyChart.options.scales.y.max = maxY;
+        weeklyChart.options.scales.y.min = minY;
+        weeklyChart.options.scales.y.max = maxY;
+
+        // Re-render charts
+        realtimeChart.update();
+        dailyChart.update();
+        weeklyChart.update();
+      }
+
       function updateCharts() {
         fetch('/data')
           .then(response => response.json())
           .then(data => {
-            // Update real-time chart
-            realtimeChart.data.datasets[0].data.shift();
-            realtimeChart.data.datasets[0].data.push(data.realtimeValues[data.realtimeValues.length - 1]);
+            // Ensure valid data is pushed to the chart
+            const latestValue = data.realtimeValues[data.realtimeValues.length - 1];
+            console.log("Latest sensor value:", latestValue);  // Debugging sensor values
 
-            // Update daily and weekly charts
+            // Shift old data and push new data into the chart
+            realtimeChart.data.datasets[0].data.shift();
+            realtimeChart.data.datasets[0].data.push(latestValue);
+
+            // Update daily and weekly charts in the same way
             dailyChart.data.datasets[0].data = data.hourlyValues;
             weeklyChart.data.datasets[0].data = data.dailyValues;
 
-            // Update moisture status bar and icon
-            const latestValue = data.realtimeValues[data.realtimeValues.length - 1];
-            const moisturePercent = mapRange(latestValue, 2200, 3100, 100, 0); // Wet = 100%, Dry = 0%
+            // Update the moisture status bar and icon based on the latest value
+            const moisturePercent = mapRange(latestValue, wetThreshold, dryThreshold, 100, 0); // Wet = 100%, Dry = 0%
             const moistureColor = getMoistureColor(latestValue);
             moistureBar.style.width = `${moisturePercent}%`;
             moistureBar.style.backgroundColor = moistureColor;
-            document.body.style.backgroundColor = moistureColor;  // Update page background theme
+            document.body.style.backgroundColor = moistureColor;
 
-            if (latestValue <= 2200) {
+            if (latestValue <= wetThreshold) {
               moistureIcon.textContent = "🌿 Moist";
-            } else if (latestValue > 2200 && latestValue <= 2600) {
-              moistureIcon.textContent = "🌱 Moist";
-            } else if (latestValue > 2600 && latestValue <= 3100) {
+            } else if (latestValue > wetThreshold && latestValue <= dryThreshold) {
               moistureIcon.textContent = "🌵 Dry";
             } else {
               moistureIcon.textContent = "🔥 Very Dry";
             }
 
+            // Update all charts
             realtimeChart.update();
             dailyChart.update();
             weeklyChart.update();
           });
       }
+
 
       // Function to map moisture value to a smooth color gradient between green, yellow, and red
       function getMoistureColor(value) {
@@ -255,12 +366,10 @@ void serveHTML() {
         const red = [255, 87, 34];     // RGB for red
 
         let resultColor;
-        if (value <= 2200) {
+        if (value <= wetThreshold) {
           resultColor = `rgb(${green[0]}, ${green[1]}, ${green[2]})`;
-        } else if (value > 2200 && value <= 2600) {
-          resultColor = interpolateColor(green, yellow, (value - 2200) / 400);
-        } else if (value > 2600 && value <= 3100) {
-          resultColor = interpolateColor(yellow, red, (value - 2600) / 500);
+        } else if (value > wetThreshold && value <= dryThreshold) {
+          resultColor = interpolateColor(green, yellow, (value - wetThreshold) / (dryThreshold - wetThreshold));
         } else {
           resultColor = `rgb(${red[0]}, ${red[1]}, ${red[2]})`;
         }
@@ -313,6 +422,11 @@ void serveData() {
 // Collect sensor data and update averages
 void updateSensorData() {
   int sensorValue = analogRead(sensorPin); // Read the sensor value
+
+  // Ensure sensor value is within a valid range
+  if (sensorValue < 1300 || sensorValue > 3500) {
+    sensorValue = constrain(sensorValue, 1300, 3500);
+  }
 
   // Store real-time data
   secondAverages[bufferIndex] = sensorValue;
@@ -368,7 +482,19 @@ void setup() {
   // Start the server
   server.on("/", serveHTML);        // Serve the HTML page
   server.on("/data", serveData);    // Serve sensor data
+  server.on("/save-settings", []() {
+    dryThreshold = server.arg("dryThreshold").toInt();
+    wetThreshold = server.arg("wetThreshold").toInt();
+    preferences.putInt("dryThreshold", dryThreshold);
+    preferences.putInt("wetThreshold", wetThreshold);
+    server.send(200, "application/json", "{\"status\":\"success\"}");
+  });
   server.begin();
+
+  // Load threshold values from preferences
+  preferences.begin("settings", false);
+  dryThreshold = preferences.getInt("dryThreshold", 3100);  // Default to 3100
+  wetThreshold = preferences.getInt("wetThreshold", 2200);  // Default to 2200
 }
 
 void loop() {
