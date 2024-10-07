@@ -9,7 +9,7 @@ This project provides a **real-time web-based dashboard** to monitor the soil mo
   <img src="./imgs/xiaoesp32s3.jpg" alt="XIAO ESP32S3" width="200px"/>
 </p>
 <p align="center">
-  <img src="./imgs/webpage.png" alt="Webpage" width="200px"/>
+  <img src="./imgs/webpage.png" alt="Webpage" width="800px"/>
 </p>
 ## Features
 
