@@ -8,7 +8,9 @@ This project provides a **real-time web-based dashboard** to monitor the soil mo
   <img src="./imgs/sensor.jpg" alt="Moisture Sensor" width="200px"/>
   <img src="./imgs/xiaoesp32s3.jpg" alt="XIAO ESP32S3" width="200px"/>
 </p>
-
+<p align="center">
+  <img src="./imgs/webpage.png" alt="Webpage" width="200px"/>
+</p>
 ## Features
 
 - **Real-time Moisture Level Monitoring**: The dashboard shows the latest moisture reading, updated every 100ms.
