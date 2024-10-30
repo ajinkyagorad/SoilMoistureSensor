@@ -1,10 +1,11 @@
 #include <WiFi.h>
 #include <WebServer.h>
 #include <Preferences.h>
+#include <Ticker.h>
 
 // Wi-Fi credentials
-const char* ssid = "";
-const char* password = "";
+const char* ssid = "Triton9";
+const char* password = "88888888";
 
 // Server running on port 80
 WebServer server(80);
@@ -13,28 +14,46 @@ Preferences preferences;
 // Sensor pin
 int sensorPin = A10;
 
-// Circular buffer for the last 30 seconds of data (10 samples per second, averaged per second)
-const int bufferSize = 30;
-float secondAverages[bufferSize]; // Stores 30-second raw data
-int bufferIndex = 0;
+// Sampling ticker
+Ticker samplingTicker;
 
-// Variables for real-time sampling (10 samples per second)
-int sampleCounter = 0;
-float secondSum = 0;
+// Circular buffers
+const int secBufferSize = 10;
+float sec_values[secBufferSize]; // Stores 10 values (each 100ms)
+int secBufferIndex = 0;
 
-// Variables to store hourly averages for the past 24 hours and daily averages for the past 7 days
-float hourlyAverages[24]; // 24 hours for daily history
-float weeklyAverages[7];  // 7 days for weekly history
-int hourlyIndex = 0;
-int weeklyIndex = 0;
+const int minBufferSize = 60;
+float min_values[minBufferSize]; // Stores 60 values (each second average)
+int minBufferIndex = 0;
+
+const int hourBufferSize = 60;
+float hour_values[hourBufferSize]; // Stores 60 values (each minute average)
+int hourBufferIndex = 0;
+
+const int dayBufferSize = 24;
+float day_values[dayBufferSize]; // Stores 24 values (each hour average)
+int dayBufferIndex = 0;
+
+const int weekBufferSize = 7;
+float week_values[weekBufferSize]; // Stores 7 values (each day average)
+int weekBufferIndex = 0;
+
+const int yearBufferSize = 52;
+float year_values[yearBufferSize]; // Stores 52 values (each week average)
+int yearBufferIndex = 0;
+
+// Accumulators for averaging
+float secSum = 0;
+int secSampleCounter = 0;
+float minSum = 0;
 float hourSum = 0;
 float daySum = 0;
-int minuteCounter = 0;
-int dayCounter = 0;
+float weekSum = 0;
 
 // Thresholds for determining moisture levels (stored in preferences)
 int dryThreshold;
 int wetThreshold;
+
 
 // Helper function to serve the HTML page
 void serveHTML() {
@@ -401,64 +420,76 @@ void serveHTML() {
 // Endpoint to serve real-time sensor data as JSON
 void serveData() {
   String json = "{\"realtimeValues\":["; 
-  for (int i = 0; i < bufferSize; i++) {
-    json += String(secondAverages[(bufferIndex + i) % bufferSize]);
-    if (i < bufferSize - 1) json += ",";
+  for (int i = 0; i < secBufferSize; i++) {
+    json += String(sec_values[(secBufferIndex + i) % secBufferSize]);
+    if (i < secBufferSize - 1) json += ",";
   }
   json += "],\"hourlyValues\":[";
-  for (int i = 0; i < 24; i++) {
-    json += String(hourlyAverages[i]);
-    if (i < 23) json += ",";
+  for (int i = 0; i < dayBufferSize; i++) {
+    json += String(day_values[i]);
+    if (i < dayBufferSize - 1) json += ",";
   }
   json += "],\"dailyValues\":[";
-  for (int i = 0; i < 7; i++) {
-    json += String(weeklyAverages[i]);
-    if (i < 6) json += ",";
+  for (int i = 0; i < weekBufferSize; i++) {
+    json += String(week_values[i]);
+    if (i < weekBufferSize - 1) json += ",";
   }
   json += "]}";
   server.send(200, "application/json", json);
 }
 
-// Collect sensor data and update averages
-void updateSensorData() {
+// ISR function called every 100 ms for sampling
+void IRAM_ATTR sampleSensor() {
   int sensorValue = analogRead(sensorPin); // Read the sensor value
+  sec_values[secBufferIndex] = sensorValue;
+  secBufferIndex = (secBufferIndex + 1) % secBufferSize;
 
-  // Ensure sensor value is within a valid range
-  if (sensorValue < 1300 || sensorValue > 3500) {
-    sensorValue = constrain(sensorValue, 1300, 3500);
-  }
+  secSum += sensorValue;
+  secSampleCounter++;
 
-  // Store real-time data
-  secondAverages[bufferIndex] = sensorValue;
-  bufferIndex = (bufferIndex + 1) % bufferSize;
+  if (secSampleCounter == secBufferSize) { // After 1 second (10 samples)
+    float secAvg = secSum / secBufferSize;
+    secSum = 0;
+    secSampleCounter = 0;
 
-  // Accumulate hourly averages
-  secondSum += sensorValue;
-  sampleCounter++;
+    min_values[minBufferIndex] = secAvg;
+    minBufferIndex = (minBufferIndex + 1) % minBufferSize;
 
-  if (sampleCounter == 10) { // Every second
-    hourSum += secondSum / sampleCounter;
-    minuteCounter++;
-    secondSum = 0;
-    sampleCounter = 0;
-  }
+    minSum += secAvg;
+    if (minBufferIndex == 0) { // After 1 minute (60 seconds)
+      float minAvg = minSum / minBufferSize;
+      minSum = 0;
 
-  if (minuteCounter == 60) { // Every hour
-    hourlyAverages[hourlyIndex] = hourSum / 60;  // Store hourly averages
-    hourSum = 0;
-    minuteCounter = 0;
-    hourlyIndex = (hourlyIndex + 1) % 24;
+      hour_values[hourBufferIndex] = minAvg;
+      hourBufferIndex = (hourBufferIndex + 1) % hourBufferSize;
 
-    // Accumulate daily averages
-    daySum += hourlyAverages[hourlyIndex];
-    dayCounter++;
-  }
+      hourSum += minAvg;
+      if (hourBufferIndex == 0) { // After 1 hour (60 minutes)
+        float hourAvg = hourSum / hourBufferSize;
+        hourSum = 0;
 
-  if (dayCounter == 24) { // Every day
-    weeklyAverages[weeklyIndex] = daySum / 24;  // Store daily averages
-    weeklyIndex = (weeklyIndex + 1) % 7;
-    daySum = 0;
-    dayCounter = 0;
+        day_values[dayBufferIndex] = hourAvg;
+        dayBufferIndex = (dayBufferIndex + 1) % dayBufferSize;
+
+        daySum += hourAvg;
+        if (dayBufferIndex == 0) { // After 1 day (24 hours)
+          float dayAvg = daySum / dayBufferSize;
+          daySum = 0;
+
+          week_values[weekBufferIndex] = dayAvg;
+          weekBufferIndex = (weekBufferIndex + 1) % weekBufferSize;
+
+          weekSum += dayAvg;
+          if (weekBufferIndex == 0) { // After 1 week (7 days)
+            float weekAvg = weekSum / weekBufferSize;
+            weekSum = 0;
+
+            year_values[yearBufferIndex] = weekAvg;
+            yearBufferIndex = (yearBufferIndex + 1) % yearBufferSize;
+          }
+        }
+      }
+    }
   }
 }
 
@@ -475,9 +506,12 @@ void setup() {
   Serial.println(WiFi.localIP());
 
   // Initialize the data buffers
-  for (int i = 0; i < bufferSize; i++) secondAverages[i] = 0;
-  for (int i = 0; i < 24; i++) hourlyAverages[i] = 0;
-  for (int i = 0; i < 7; i++) weeklyAverages[i] = 0;
+  for (int i = 0; i < secBufferSize; i++) sec_values[i] = 0;
+  for (int i = 0; i < minBufferSize; i++) min_values[i] = 0;
+  for (int i = 0; i < hourBufferSize; i++) hour_values[i] = 0;
+  for (int i = 0; i < dayBufferSize; i++) day_values[i] = 0;
+  for (int i = 0; i < weekBufferSize; i++) week_values[i] = 0;
+  for (int i = 0; i < yearBufferSize; i++) year_values[i] = 0;
 
   // Start the server
   server.on("/", serveHTML);        // Serve the HTML page
@@ -493,12 +527,13 @@ void setup() {
 
   // Load threshold values from preferences
   preferences.begin("settings", false);
-  dryThreshold = preferences.getInt("dryThreshold", 3100);  // Default to 3100
-  wetThreshold = preferences.getInt("wetThreshold", 2200);  // Default to 2200
+  dryThreshold = preferences.getInt("dryThreshold", 2600);  // Default to 3100
+  wetThreshold = preferences.getInt("wetThreshold", 1800);  // Default to 1400;
+
+  // Start the sampling ticker at 100ms intervals
+  samplingTicker.attach_ms(100, sampleSensor);
 }
 
 void loop() {
   server.handleClient();
-  updateSensorData();
-  delay(100);  // Update sensor data every 100ms
 }
